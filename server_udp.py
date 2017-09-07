@@ -1,153 +1,244 @@
-import socket
-import threading
-import struct
+import socket, sys
+from struct import *
+from binascii import hexlify
 
 
-class ThreadedServer(object):
-    def __init__(self, host, port):
-        self.host = host
-        self.port = port
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM,socket.IPPROTO_TCP)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind((self.host, self.port))
-
-        self.scene = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0]
-        self.jumping = False
-        self.countJump = 0
-        self.alive = True
-        self.countJump = 5
-        self.unpacker = struct.Struct('I I')
+scene = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0]
+jumping = False
+countJump = 0
+alive = True
+countJump = 5
 
 
-    def draw(self):
+def draw():
+    global input, jumping, alive
+    scene_str = "\n"*20
+    first = scene.pop(0)
+    scene.append(first)
 
-        global input
-        scene_str = "\n"*20
-        first = self.scene.pop(0)
-        self.scene.append(first)
-        
-        for (i, e) in enumerate(self.scene):
+    for (i, e) in enumerate(scene):
+        if i == 5 and jumping:
+            scene_str += "o"
+        else:
+            scene_str += " "
 
-            if self.jumping:
-                scene_str += "o"
-            else:
-                scene_str += " "
+    scene_str += "\n"
+
+    for (i, e) in enumerate(scene):
+        if(i == 5 and e == 1 and not jumping):
+            scene_str += "x"
+            alive = False
+        elif i == 5 and not jumping:
+            scene_str += "o"
+        elif e == 0:
+            scene_str += "_"
+        else:
+            scene_str += "|"
+
+    return scene_str
 
 
-        scene_str += "\n"
+
+
+def createPack(info):
     
-        for (i, e) in enumerate(self.scene):
-            
-            print(i,self.jumping,self.countJump)
+    global port_num, destination_mac,source_mac,s_addr,d_addr
+    global sock
+    global source_ip,dest_ip,tcp_dest
 
-            if self.jumping:
-                self.countJump = self.countJump - 1    
-        
-            if self.countJump == 0:
-                self.jumping = False
-            
-            if(i == 5 and e == 1 and not self.jumping):
-                scene_str += "x"
-                self.alive = False
-            elif i == 5 and not self.jumping:
-                scene_str += "o"
-            elif e == 0:
-                scene_str += "_"
-            else:
-                scene_str += "|"
-            
+    source_ip = d_addr
+    dest_ip = s_addr
+
     
-        return scene_str
+    # now start constructing the packet
+    packet = '';
+      
+    # ip header fields
+    ip_ihl = 5
+    ip_ver = 4
+    ip_tos = 0
+    ip_tot_len = 0  # kernel will fill the correct total length
+    ip_id = 54321   #Id of this packet
+    ip_frag_off = 0
+    ip_ttl = 255
+    ip_proto = socket.IPPROTO_TCP
+    ip_check = 0    # kernel will fill the correct checksum
+    ip_saddr = socket.inet_aton ( source_ip )   
+    ip_daddr = socket.inet_aton ( dest_ip )
+     
+    ip_ihl_ver = (ip_ver << 4) + ip_ihl
+     
+    # the ! in the pack format string means network order
+    ip_header = pack('!BBHHHBBH4s4s' , ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
+     
+    # tcp header fields
+    tcp_source = port_num   # source port
+    #tcp_dest = ****   # destination port
+    tcp_seq = 454
+    tcp_ack_seq = 0
+    tcp_doff = 5    #4 bit field, size of tcp header, 5 * 4 = 20 bytes
+    #tcp flags
+    tcp_fin = 0
+    tcp_syn = 1
+    tcp_rst = 0
+    tcp_psh = 0
+    tcp_ack = 0
+    tcp_urg = 0
+    tcp_window = socket.htons (5840)    #   maximum allowed window size
+    tcp_check = 0
+    tcp_urg_ptr = 0
+     
+    tcp_offset_res = (tcp_doff << 4) + 0
+    tcp_flags = tcp_fin + (tcp_syn << 1) + (tcp_rst << 2) + (tcp_psh <<3) + (tcp_ack << 4) + (tcp_urg << 5)
+     
+    # the ! in the pack format string means network order
+    tcp_header = pack('!HHLLBBHHH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window, tcp_check, tcp_urg_ptr)
+     
+    user_data = info
+     
+    # pseudo header fields
+    source_address = socket.inet_aton( source_ip )
+    dest_address = socket.inet_aton(dest_ip)
+    placeholder = 0
+    protocol = socket.IPPROTO_TCP
+    tcp_length = len(tcp_header) + len(user_data)
+     
+    psh = pack('!4s4sBBH' , source_address , dest_address , placeholder , protocol , tcp_length);
+    psh = psh + tcp_header + user_data;
+     
+    tcp_check = 0 #checksum(psh)
+    #print tcp_checksum
+     
+    # make the tcp header again and fill the correct checksum - remember checksum is NOT in network byte order
+    tcp_header = pack('!HHLLBBH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window) + pack('H' , tcp_check) + pack('!H' , tcp_urg_ptr)
+     
+    # final full packet - syn packets dont have any data
+    packet = ip_header + tcp_header + user_data
+     
+    #Send the packet finally - the port specified has no effect
+    sock.sendto(packet, (dest_ip , 0 ))    
 
 
-    def openPackage(self):
-        
-        print('chegou aqui')
 
-        data = self.sock.recv(1024)
+def readPack(packet):
+    global port_num, destination_mac,source_mac,s_addr,d_addr,tcp_dest
 
-        header = data[0][0:14]    
-        ipHeader = data[0][14:34]    
-        tcpHeader = data[0][34:54]  
-
-        hd = struct.unpack("!6s6s2s", header)    
-        
-       
-        print('---------- ETHERNET FRAME ----------')    
-        print('Destination mac: {0}', hexlify(hd[0]))    
-        print('Source mac: {0}', hexlify(hd[1])     )  
-        print('Type: {0}', hexlify(hd[2])           )
+    value_print = ' '
     
-        ip_hrd = struct.unpack("!12s4s4s",ipHeader)    
+    #packet string from tuple
+    packet = packet[0]
+     
+    header = packet[0:14]   
+    hd = unpack("!6s 6s 2s", header) 
+
+    destination_mac =  hexlify(hd[0]) 
+    source_mac = hexlify(hd[1])
+    type_protocol = hexlify(hd[2])
+
+    value_print += '\n' + '---------- ETHERNET FRAME ----------'    
+    value_print += '\n' + 'Destination mac: '+  destination_mac
+    value_print += '\n' + 'Source mac: '+ source_mac       
+    value_print += '\n' + 'Type: '+ type_protocol        
+
+    #take first 20 characters for the ip header
+    ip_header = packet[0:20]
+     
+    # --------------IP HEADER -----------
+    iph = unpack('!BBHHHBBH4s4s' , ip_header)
+     
+    version_ihl = iph[0]
+    version = version_ihl >> 4
+    ihl = version_ihl & 0xF
+     
+    iph_length = ihl * 4
+     
+    ttl = iph[5]
+    protocol = iph[6]
+    s_addr = socket.inet_ntoa(iph[8]);
+    d_addr = socket.inet_ntoa(iph[9]);
+
+    #Filtra somente protocolo TCP
+    if protocol == 6 :
     
-        print('---------- IP ----------'                          )    
-        print('Source IP: {0}', socket.inet_ntoa(ip_hrd[1])       )  
-        print('Destination IP: {0}', socket.inet_ntoa(ip_hrd[2])  )  
-        
-        #tcp_hrd = struct.unpack("!HH16s",tcpHeader)    
+        value_print += '\n' + '----------- IP HEADER---------'
+        value_print += '\n' + ' Version : ' + str(version) 
+        value_print += '\n' + ' IP Header Length : ' + str(ihl) 
+        value_print += '\n' + ' TTL : ' + str(ttl) 
+        value_print += '\n' + ' Protocol : ' + str(protocol) 
+        value_print += '\n' + ' Source Address : ' + str(s_addr) 
+        value_print += '\n' + ' Destination Address : ' + str(d_addr)
+         
+         #-------------- TCP HEADER ------------
+        tcp_header = packet[iph_length:iph_length+20]
+         
+        #now unpack them :)
+        tcph = unpack('!HHLLBBHHH' , tcp_header)
+         
+        source_port = tcph[0]
+        dest_port = tcph[1]
+        sequence = tcph[2]
+        acknowledgement = tcph[3]
+        doff_reserved = tcph[4]
+        tcph_length = doff_reserved >> 4
+         
+        tcp_dest = source_port
+
+        value_print += '\n' + '----------- TCP HEADER---------'
+        value_print += '\n' + ' Source Port : ' + str(source_port) 
+        value_print += '\n' + ' Dest Port : ' + str(dest_port) 
+        value_print += '\n' + ' Sequence Number : ' + str(sequence) 
+        value_print += '\n' + ' Acknowledgement : ' + str(acknowledgement) 
+        value_print += '\n' + ' TCP header length : ' + str(tcph_length)
+         
+        h_size = iph_length + tcph_length * 4
+        data_size = len(packet) - h_size
+         
+        #get data from the packet
+        data = packet[h_size:]
+         
+        value_print += '\n' + ' Data : ' + data
+
+        print str(data)
+
+        if int(str(data).split(',')[0]) == 1:
+
+            #print("PULO",data.split(',')[0])
+            jumping = True;
+
+        if dest_port == port_num:
+            print value_print
+            return True
+
+    return False
+ 
+
+
+def runServer():
+    global port_num, sock
+
+    port_num = 1098 #input("Port? ")
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+    except socket.error , msg:
+        print 'Socket could not be created. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
+        sys.exit()
+     
+    # receive a packet
+    while True:
     
-        tcp_hrd = struct.unpack("!HHLLBBHHH",tcpHeader)    
-        
-        print('---------- TCP ----------'         )   
-        print('Source Port: {0}', tcp_hrd[0]      )
-        print('Destination Port: {0}', tcp_hrd[1] )   
-        print('Flag: {0}',tcp_hrd[2]              )
-        print('Acknowledgement : {0}', tcp_hrd[3] )   
-        print('TCP header length: {0}',tcp_hrd[4] )
+        packet = sock.recvfrom(65565)
+    
+        if readPack(packet):
 
-        return
+                response = draw()
 
+                createPack(response)
 
-    def listen(self):
+                print response
 
-        self.sock.listen(5)
-
-        while True:
-
-            client, address = self.sock.accept()
-
-            #self.openPackage()
-           
-            client.settimeout(20)
-
-            threading.Thread(target = self.listenToClient,args = (client,address)).start()
-
-    def listenToClient(self, client, address):
-        
-        size = 2048
-
-        while True:
-
-            try:
-                data = client.recv(size)
-
-                if data:
-
-                    #print("data chegou", data)
-
-                    if int(data.split(',')[0]) == 1:
-                        print("PULO",data.split(',')[0])
-                        self.jumping = True;
-
-                    # Set the response to echo back the recieved data 
-                    response = self.draw()
-
-                    client.send(response)
-                else:
-                    raise error('Client disconnected')
-                
-            except:
-                client.close()
-                return False
+                print
 
 
 if __name__ == "__main__":
-    while True:
-        #port_num =  input("Port? ")
-        try:
-            port_num = 1098 #int(port_num)
-            break
-        except ValueError:
-            pass
-
-    ThreadedServer('',port_num).listen()
+    runServer()

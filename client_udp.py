@@ -1,100 +1,142 @@
-#!/usr/bin/python
-import socket
-import time
-import os
-import threading
-import sys
-
-clear = lambda: os.system('clear')
-alive = True
-scene = ''
+# some imports
+import socket, sys
+from struct import *
 
 def draw(scene):
     clear()
     print 'received draw: ' + scene
 
-def gameLoop():
-    global alive, scene
-    alive = True
-    while alive:
-        alive, scene = getSetDataServer(0)    
-        draw(scene)
-        time.sleep(0.2)
+def gameloop(action):
 
-def readKeypress():
-    global alive
-    while alive:
-        raw_input()
-        alive, scene = getSetDataServer(1)
-        sendServerData()
-
-def getSetDataServer(action):
-    
-    global state
-
+    global state,sock
     msg = str(action) + ',' +  str(state)
-
     state += 1
-    
-    sock.send(msg)
-    
+
+    createPack(msg)
+
     draw = sock.recv(1024)
-    
     return True, draw
 
-    #return True, '---'
 
-def sendServerData():
-    sock.send(1)
-    # send the jump to server
-    print 'sent jump'
+ 
+# checksum functions needed for calculation checksum
+def checksum(msg):
+    s = 0
+     
+    # loop taking 2 characters at a time
+    for i in range(0, len(msg), 2):
+        w = ord(msg[i]) + (ord(msg[i+1]) << 8 )
+        s = s + w
+     
+    s = (s>>16) + (s & 0xffff);
+    s = s + (s >> 16);
+     
+    #complement and mask to 4 byte short
+    s = ~s & 0xffff
+     
+    return s
+
+def createPack(info):
+    
+    global sock
+    global source_ip,dest_ip,tcp_dest
+    
+    # now start constructing the packet
+    packet = '';
+      
+    # ip header fields
+    ip_ihl = 5
+    ip_ver = 4
+    ip_tos = 0
+    ip_tot_len = 0  # kernel will fill the correct total length
+    ip_id = 54321   #Id of this packet
+    ip_frag_off = 0
+    ip_ttl = 255
+    ip_proto = socket.IPPROTO_TCP
+    ip_check = 0    # kernel will fill the correct checksum
+    ip_saddr = socket.inet_aton ( source_ip )   #Spoof the source ip address if you want to
+    ip_daddr = socket.inet_aton ( dest_ip )
+     
+    ip_ihl_ver = (ip_ver << 4) + ip_ihl
+     
+    # the ! in the pack format string means network order
+    ip_header = pack('!BBHHHBBH4s4s' , ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
+     
+    # tcp header fields
+    tcp_source = 1234   # source port
+    #tcp_dest = 1078   # destination port
+    tcp_seq = 454
+    tcp_ack_seq = 0
+    tcp_doff = 5    #4 bit field, size of tcp header, 5 * 4 = 20 bytes
+    #tcp flags
+    tcp_fin = 0
+    tcp_syn = 1
+    tcp_rst = 0
+    tcp_psh = 0
+    tcp_ack = 0
+    tcp_urg = 0
+    tcp_window = socket.htons (5840)    #   maximum allowed window size
+    tcp_check = 0
+    tcp_urg_ptr = 0
+     
+    tcp_offset_res = (tcp_doff << 4) + 0
+    tcp_flags = tcp_fin + (tcp_syn << 1) + (tcp_rst << 2) + (tcp_psh <<3) + (tcp_ack << 4) + (tcp_urg << 5)
+     
+    # the ! in the pack format string means network order
+    tcp_header = pack('!HHLLBBHHH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window, tcp_check, tcp_urg_ptr)
+     
+    user_data = info
+     
+    # pseudo header fields
+    source_address = socket.inet_aton( source_ip )
+    dest_address = socket.inet_aton(dest_ip)
+    placeholder = 0
+    protocol = socket.IPPROTO_TCP
+    tcp_length = len(tcp_header) + len(user_data)
+     
+    psh = pack('!4s4sBBH' , source_address , dest_address , placeholder , protocol , tcp_length);
+    psh = psh + tcp_header + user_data;
+     
+    tcp_check = 0 #checksum(psh)
+    #print tcp_checksum
+     
+    # make the tcp header again and fill the correct checksum - remember checksum is NOT in network byte order
+    tcp_header = pack('!HHLLBBH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window) + pack('H' , tcp_check) + pack('!H' , tcp_urg_ptr)
+     
+    # final full packet - syn packets dont have any data
+    packet = ip_header + tcp_header + user_data
+     
+    #Send the packet finally - the port specified has no effect
+    sock.sendto(packet, (dest_ip , 0 ))    # put this in a loop if you want to flood the target
 
 def main():    
     global alive
     global sock
-    global state 
+    global state, packet
+    global source_ip,dest_ip,tcp_dest 
 
+    alive = True
+    packet = '';
     state = 0
-       
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host = 'localhost' #raw_input("Server hostname or ip? ")
-    port = 1096 #input("Server port? ")
-    #sock.connect((host,port))
-
-    sock.connect(('127.0.0.1', 1098))
-        
+      
+    #create a raw socket
     try:
-        t=threading.Thread(target=gameLoop)
-        t2=threading.Thread(target=readKeypress)
-        t.daemon = True
-        t.start()
-        t2.daemon = True
-        t2.start()
-    except:
-        print "Error: unable to start thread"
+        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+    except socket.error , msg:
+        print 'Socket could not be created. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
+        sys.exit()
+ 
+    dest_ip = socket.gethostbyname(socket.gethostname())
+    source_ip = '10.0.2.15' #raw_input("Server hostname or ip? ")
+    tcp_dest = 1098 #input("Server port? ")
+    sock.connect((dest_ip, tcp_dest))
     
     while alive:
-        pass
+       alive , scene = gameloop(0)
+       draw(scene)
+
     print "\nGAME OVER !!!\n"
     
 
+
 if  __name__ =='__main__':main()
-
-
-
-'''
-import socket
-
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-host = 'localhost' #raw_input("Server hostname or ip? ")
-port = 1096 #input("Server port? ")
-#sock.connect((host,port))
-
-sock.connect(('127.0.0.1', 1098))
-
-while True:
-    data = raw_input("message: ")
-    sock.send(data)
-    print "response: ", sock.recv(1024)
-
-'''
