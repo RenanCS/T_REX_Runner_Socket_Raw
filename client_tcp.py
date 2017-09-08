@@ -6,6 +6,8 @@ import sys
 import socket
 import fcntl
 import struct
+import binascii
+from uuid import getnode as get_mac
 from struct import *
 
 clear = lambda: os.system('clear')
@@ -29,7 +31,7 @@ def checksum(msg):
     return s
 
 def send_packet(data):
-    global server_port, client_port, client_ip, server_ip
+    global server_port, client_port, client_ip, server_ip,destination_mac
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
@@ -44,7 +46,14 @@ def send_packet(data):
     packet = '';
     
     source_ip, dest_ip  = client_ip, server_ip
-    
+
+    ##########eth_dest_mac = destination_mac
+    ##########eth_sour_mac = get_mac()
+    ##########eth_type = int("0x0800", 0) 
+    ##########
+    ##########ethernet_hdr = pack('!6s62s', eth_dest_mac,eth_sour_mac,eth_type)
+    ##########print "ETHERNET FRAME = " + ethernet_hdr
+
     # ip header fields
     ip_ihl = 5
     ip_ver = 4
@@ -113,7 +122,7 @@ def send_packet(data):
             
 # Sniffer
 def sniffer():
-    global countJump, alive, client_port, server_port
+    global countJump, alive, client_port, server_port,destination_mac
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
@@ -127,6 +136,12 @@ def sniffer():
         
         #packet string from tuple
         packet = packet[0]
+        
+        #Ethernet Header...
+        ethernet_Header=packet[0:14]
+
+        ethrheader=struct.unpack("!6s6s2s",ethernet_Header)
+        sourcemac= binascii.hexlify(ethrheader[1])
         
         #take first 20 characters for the ip header
         ip_header = packet[0:20]
@@ -165,7 +180,9 @@ def sniffer():
         h_size = iph_length + tcph_length * 4
         data_size = len(packet) - h_size
 
-        if dest_port == client_port:        
+        if dest_port == client_port:
+            destination_mac = sourcemac
+            print 'DEST ' + destination_mac       
             data = packet[h_size:]
             clear()
             if data == '0':
