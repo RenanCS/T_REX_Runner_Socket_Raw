@@ -4,16 +4,19 @@ import os
 import threading
 import sys
 import socket
+import fcntl
+import struct
 from struct import *
 
 clear = lambda: os.system('clear')
-port_server = 1098
-port_client = 1099
+client_port = 1099
 
 alive = True
 
 # Keypress
 def keypress():
+    send_packet('connect')
+
     while True:
         raw_input()
         send_packet('1')
@@ -26,7 +29,7 @@ def checksum(msg):
     return s
 
 def send_packet(data):
-    global port_server, port_client
+    global server_port, client_port, client_ip, server_ip
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
@@ -40,8 +43,7 @@ def send_packet(data):
     # now start constructing the packet
     packet = '';
     
-    source_ip = '127.0.0.1'
-    dest_ip = '127.0.0.1'
+    source_ip, dest_ip  = client_ip, server_ip
     
     # ip header fields
     ip_ihl = 5
@@ -63,7 +65,7 @@ def send_packet(data):
     
     # tcp header fields
     tcp_source = 1234   # source port
-    tcp_dest = port_server   # destination port
+    tcp_dest = server_port   # destination port
     tcp_seq = 454
     tcp_ack_seq = 0
     tcp_doff = 5    #4 bit field, size of tcp header, 5 * 4 = 20 bytes
@@ -111,7 +113,7 @@ def send_packet(data):
 			
 # Sniffer
 def sniffer():
-    global countJump, alive, port_client
+    global countJump, alive, client_port, server_port
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
@@ -162,7 +164,7 @@ def sniffer():
         h_size = iph_length + tcph_length * 4
         data_size = len(packet) - h_size
 
-        if dest_port == port_client:        
+        if dest_port == client_port:        
             data = packet[h_size:]
             clear()
             if data == '0':
@@ -170,8 +172,30 @@ def sniffer():
             else:
                 print data
 
+# Helpers
+def get_ip_address(ifname):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    return socket.inet_ntoa(fcntl.ioctl(
+        s.fileno(),
+        0x8915,  # SIOCGIFADDR
+        struct.pack('256s', ifname[:15])
+    )[20:24])
+
+
 def runClient():    
-    global alive
+    global alive, client_ip, server_ip, server_port
+    
+    if len(sys.argv) < 3:
+        print 'usage: sudo python client_tcp.py <server_ip> <server_port>'
+        sys.exit()
+
+    server_ip = sys.argv[1]
+    server_port = int(sys.argv[2])
+
+    client_ip = get_ip_address('eth0')
+
+    print 'Trying to connect to: ' + server_ip + ':' + str(server_port)
+
     try:
         t=threading.Thread(target=keypress)
         t2=threading.Thread(target=sniffer)

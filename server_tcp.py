@@ -4,22 +4,33 @@ import os
 import threading
 import sys
 import socket
+import fcntl
+import struct
 from struct import *
 
 scene = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0]
 jumping = False
 countJump = 0
 alive = True
+connected = False
 
-port_server = 1098
-port_client = 1099
+server_port = 1098
+client_port = 1099
 
 # Game
 
 def game():
-    global alive
+    global alive, connected
     last = 0
     cur_draw = ''
+
+    while not connected:
+        time.sleep(0.5)
+
+    print 'connecting...'
+
+    time.sleep(1)
+
     while alive:
         cur_draw = draw()
         send_packet(cur_draw)
@@ -62,7 +73,7 @@ def checksum(msg):
     return s
 
 def send_packet(data):
-    global port_server, port_client
+    global server_port, client_port, client_ip, server_ip
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
@@ -76,8 +87,7 @@ def send_packet(data):
     # now start constructing the packet
     packet = '';
     
-    source_ip = '127.0.0.1'
-    dest_ip = '127.0.0.1'
+    source_ip, dest_ip  = server_ip, client_ip
     
     # ip header fields
     ip_ihl = 5
@@ -99,7 +109,7 @@ def send_packet(data):
     
     # tcp header fields
     tcp_source = 1234   # source port
-    tcp_dest = port_client   # destination port
+    tcp_dest = client_port   # destination port
     tcp_seq = 454
     tcp_ack_seq = 0
     tcp_doff = 5    #4 bit field, size of tcp header, 5 * 4 = 20 bytes
@@ -147,7 +157,7 @@ def send_packet(data):
 # Sniffer
 
 def sniffer():
-    global countJump, alive, port_server
+    global countJump, alive, server_port, client_ip, connected
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
@@ -198,14 +208,33 @@ def sniffer():
         h_size = iph_length + tcph_length * 4
         data_size = len(packet) - h_size
 
-        if dest_port == port_server:        
+        if dest_port == server_port:        
             data = packet[h_size:]
-            if int(data) == 1:
+            if data == 'connect':
+                client_ip = s_addr
+                print 'connecting with: ' + client_ip 
+                connected = True
+            elif data == '1':
                 countJump = 4
 
+# Helpers
+def get_ip_address(ifname):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    return socket.inet_ntoa(fcntl.ioctl(
+        s.fileno(),
+        0x8915,  # SIOCGIFADDR
+        struct.pack('256s', ifname[:15])
+    )[20:24])
+
 def runServer():    
-    global alive
-    print 'Starting server...'
+    global alive, server_ip, server_port
+
+    server_ip = get_ip_address('eth0')
+
+    print '> Starting server...'
+    print '> Server ip: ' + server_ip
+    print '> Server port: ' + str(server_port)
+    print '> Waiting a connection...'
     try:
         t=threading.Thread(target=game)
         t2=threading.Thread(target=sniffer)
