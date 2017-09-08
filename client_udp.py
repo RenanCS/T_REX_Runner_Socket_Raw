@@ -247,7 +247,7 @@ def runClient():
     print 'starting'
 
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
     except socket.error , msg:
         print 'Socket could not be created. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
         sys.exit()
@@ -255,7 +255,7 @@ def runClient():
     print 'socked configured, sending'
      
     sock.connect((dest_ip, port_server))
-    createPack('0')
+    createPack('1')
 
     print 'sent'
     #packet = sock.recvfrom(65565)
@@ -263,9 +263,11 @@ def runClient():
     # receive a packet
     last = 0
     while True:    
-        packet = sock.recvfrom(65565)
 
-    
+        print 'receiving'
+        packet = sock.recvfrom(65565)
+        print 'received'        
+
         if readPack(packet):
             print 'received'
         

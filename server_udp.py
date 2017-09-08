@@ -161,6 +161,7 @@ def readPack(packet):
 
     #Filtra somente protocolo TCP
     if protocol == 6 :
+        
     
         value_print += '\n' + '----------- IP HEADER---------'
         value_print += '\n' + ' Version : ' + str(version) 
@@ -204,7 +205,7 @@ def readPack(packet):
         #    jumping = True;
 
 
-        if dest_port == port_server:            
+        if dest_port == port_server:    
             return int(data) == 1
 
     return False
@@ -229,10 +230,8 @@ def runServer():
     while True:
     
         packet = sock.recvfrom(65565)
-
     
         if readPack(packet):
-            print 'received'
             countJump = 15
         
         cur_time = int(round(time.time() * 1000))
@@ -241,7 +240,7 @@ def runServer():
             draw_str = draw()
             last = cur_time
             # debug:
-            #print draw_str
+            print draw_str
 
         createPack(draw_str)
 
