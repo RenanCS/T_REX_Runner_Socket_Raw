@@ -1,4 +1,4 @@
-import socket, sys
+import socket, sys, time
 from struct import *
 from binascii import hexlify
 
@@ -7,14 +7,16 @@ scene = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0]
 jumping = False
 countJump = 0
 alive = True
-countJump = 5
 
 
 def draw():
-    global input, jumping, alive
+    global input, jumping, alive, countJump
     scene_str = "\n"*20
     first = scene.pop(0)
     scene.append(first)
+    countJump = countJump - 1 if countJump > 0 else 0
+
+    jumping = countJump > 0
 
     for (i, e) in enumerate(scene):
         if i == 5 and jumping:
@@ -42,9 +44,9 @@ def draw():
 
 def createPack(info):
     
-    global port_num, destination_mac,source_mac,s_addr,d_addr
+    global destination_mac,source_mac,s_addr,d_addr, port_server, port_client
     global sock
-    global source_ip,dest_ip,tcp_dest
+    global source_ip,dest_ip
 
     source_ip = d_addr
     dest_ip = s_addr
@@ -72,8 +74,8 @@ def createPack(info):
     ip_header = pack('!BBHHHBBH4s4s' , ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
      
     # tcp header fields
-    tcp_source = port_num   # source port
-    #tcp_dest = ****   # destination port
+    tcp_source = port_server   # source port
+    tcp_dest = port_client   # destination port
     tcp_seq = 454
     tcp_ack_seq = 0
     tcp_doff = 5    #4 bit field, size of tcp header, 5 * 4 = 20 bytes
@@ -121,7 +123,7 @@ def createPack(info):
 
 
 def readPack(packet):
-    global port_num, destination_mac,source_mac,s_addr,d_addr,tcp_dest
+    global destination_mac,source_mac,s_addr,d_addr,tcp_dest, port_server, port_client
 
     value_print = ' '
     
@@ -180,8 +182,6 @@ def readPack(packet):
         acknowledgement = tcph[3]
         doff_reserved = tcph[4]
         tcph_length = doff_reserved >> 4
-         
-        tcp_dest = source_port
 
         value_print += '\n' + '----------- TCP HEADER---------'
         value_print += '\n' + ' Source Port : ' + str(source_port) 
@@ -196,27 +196,26 @@ def readPack(packet):
         #get data from the packet
         data = packet[h_size:]
          
-        value_print += '\n' + ' Data : ' + data
+        #value_print += '\n' + ' Data : ' + data
 
-        print str(data)
 
-        if int(str(data).split(',')[0]) == 1:
-
+        #if int(str(data).split(',')[0]) == 1:
             #print("PULO",data.split(',')[0])
-            jumping = True;
+        #    jumping = True;
 
-        if dest_port == port_num:
-            print value_print
-            return True
+
+        if dest_port == port_server:            
+            return int(data) == 1
 
     return False
  
 
 
 def runServer():
-    global port_num, sock
+    global sock, countJump, port_client, port_server
 
-    port_num = 1098 #input("Port? ")
+    port_server = 1098 #input("Port? ")
+    port_client = 1232
 
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
@@ -225,20 +224,26 @@ def runServer():
         sys.exit()
      
     # receive a packet
+    last = 0
+    draw_str = ''
     while True:
     
         packet = sock.recvfrom(65565)
+
     
         if readPack(packet):
+            print 'received'
+            countJump = 15
+        
+        cur_time = int(round(time.time() * 1000))
+        
+        if last != cur_time and cur_time % 1000 == 0:
+            draw_str = draw()
+            last = cur_time
+            # debug:
+            #print draw_str
 
-                response = draw()
-
-                createPack(response)
-
-                print response
-
-                print
-
+        createPack(draw_str)
 
 if __name__ == "__main__":
     runServer()
