@@ -64,7 +64,7 @@ def send_packet(data):
     ip_header = pack('!BBHHHBBH4s4s' , ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
     
     # tcp header fields
-    tcp_source = 1234   # source port
+    tcp_source = client_port   # source port
     tcp_dest = server_port   # destination port
     tcp_seq = 454
     tcp_ack_seq = 0
@@ -110,7 +110,7 @@ def send_packet(data):
     #Send the packet finally - the port specified has no effect
     s.sendto(packet, (dest_ip , 0 ))
 
-			
+            
 # Sniffer
 def sniffer():
     global countJump, alive, client_port, server_port
@@ -154,6 +154,7 @@ def sniffer():
         
         source_port = tcph[0]
         dest_port = tcph[1]
+
         sequence = tcph[2]
         acknowledgement = tcph[3]
         doff_reserved = tcph[4]
@@ -192,7 +193,7 @@ def runClient():
     server_ip = sys.argv[1]
     server_port = int(sys.argv[2])
 
-    client_ip = get_ip_address('eth0')
+    client_ip = get_ip_address('enp0s3')
 
     print 'Trying to connect to: ' + server_ip + ':' + str(server_port)
 

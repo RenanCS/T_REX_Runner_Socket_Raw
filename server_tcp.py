@@ -108,7 +108,7 @@ def send_packet(data):
     ip_header = pack('!BBHHHBBH4s4s' , ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
     
     # tcp header fields
-    tcp_source = 1234   # source port
+    tcp_source = server_port   # source port
     tcp_dest = client_port   # destination port
     tcp_seq = 454
     tcp_ack_seq = 0
@@ -153,7 +153,7 @@ def send_packet(data):
     
     #Send the packet finally - the port specified has no effect
     s.sendto(packet, (dest_ip , 0 ))
-			
+            
 # Sniffer
 
 def sniffer():
@@ -229,7 +229,7 @@ def get_ip_address(ifname):
 def runServer():    
     global alive, server_ip, server_port
 
-    server_ip = get_ip_address('eth0')
+    server_ip = get_ip_address('lo')
 
     print '> Starting server...'
     print '> Server ip: ' + server_ip
