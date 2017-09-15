@@ -33,8 +33,8 @@ def checksum2(msg):
         w = ord(msg[i]) + (ord(msg[i+1]) << 8 )
         s = s + w
      
-    s = (s>>16) + (s & 0xffff);
-    s = s + (s >> 16);
+    s = (s>>16) + (s & 0xffff)
+    s = s + (s >> 16)
      
     #complement and mask to 4 byte short
     s = ~s & 0xffff
@@ -59,11 +59,9 @@ def send_packet(data):
     
     source_ip, dest_ip  = client_ip, server_ip
 
-    ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
-
-    eth_dest_mac = ':'.join(map(''.join, zip(*[iter(hex(server_mac))]*2)))[3:]
-    eth_sour_mac = ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
-    eth_type = 0x0800
+    eth_dest_mac = mac_int_array(mac_string(server_mac))
+    eth_sour_mac = mac_int_array(mac_string(get_mac()))
+    eth_type = [0x08, 0x00]
 
     print '--'
     print 'dest:'
@@ -73,9 +71,13 @@ def send_packet(data):
     print 'type:'
     print eth_type
     print '--'
-    
-    ethernet_hdr = pack('!6s6sH', eth_dest_mac, eth_sour_mac, eth_type)
-    print "ETHERNET FRAME = " + ethernet_hdr
+
+    ethernet_hdr = eth_dest_mac + eth_sour_mac + eth_type
+    print "ETHERNET ARRAY = "
+    print ethernet_hdr
+
+    # pack the ethernet
+    ethernet_hdr = "".join(map(chr, ethernet_hdr)) 
 
     # ip header fields
     ip_ihl = 5
@@ -128,7 +130,7 @@ def send_packet(data):
     tcp_length = len(tcp_header) + len(user_data)
     
     psh = pack('!4s4sBBH' , source_address , dest_address , placeholder , protocol , tcp_length)
-    psh = psh + tcp_header + user_data;
+    psh = psh + tcp_header + user_data
     
     tcp_check = sum(map(ord, psh)) #checksum()
     #print tcp_checksum
@@ -137,7 +139,7 @@ def send_packet(data):
     tcp_header = pack('!HHLLBBH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window) + pack('H' , tcp_check) + pack('!H' , tcp_urg_ptr)
     
     # final full packet - syn packets dont have any data
-    packet = ip_header + tcp_header + user_data
+    packet = ethernet_hdr + ip_header + tcp_header + user_data
     
     #Send the packet finally - the port specified has no effect
     s.sendto(packet, (dest_ip , 0 ))
@@ -232,6 +234,16 @@ def get_ip_address(ifname):
         struct.pack('256s', ifname[:15])
     )[20:24])
 
+def mac_string(mac):
+    return  ':'.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
+
+def mac_int_array(hex_str):
+    list = hex_str.split(':')
+    result = []
+    for i in list:
+        result.append(int(i,16))
+    return result
+
 
 def runClient():    
     global alive, client_ip, server_mac, server_ip, server_port
@@ -244,7 +256,7 @@ def runClient():
     server_ip = sys.argv[2]
     server_port = int(sys.argv[3])
 
-    client_ip =  get_ip_address('enp0s3') #'127.0.0.1' #
+    client_ip =  get_ip_address('eth0') #'127.0.0.1' #
 
     print 'Trying to connect to: ' + server_ip + ':' + str(server_port)
 

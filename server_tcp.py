@@ -238,16 +238,19 @@ def get_ip_address(ifname):
         struct.pack('256s', ifname[:15])
     )[20:24])
 
+def mac_string(mac):
+    return  ':'.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
+
 def runServer():    
     global alive, server_ip, server_port
 
     server_ip = get_ip_address('lo') #'127.0.0.1'  
-    server_mac = ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
+    ##server_mac = ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
 
     print '> Starting server...'
     print '> Server ip: ' + server_ip
     print '> Server port: ' + str(server_port)
-    print '> Server MAC: ' + server_mac
+    print '> Server MAC: ' + mac_string(get_mac())
     print '> Waiting a connection...'
     try:
         t=threading.Thread(target=game)
