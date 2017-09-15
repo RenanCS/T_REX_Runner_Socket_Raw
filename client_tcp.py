@@ -25,13 +25,25 @@ def keypress():
 
 
 # Send packet
-def checksum(msg):
+def checksum2(msg):
     s = 0
+     
+    # loop taking 2 characters at a time
+    for i in range(0, len(msg) -1, 2):
+        w = ord(msg[i]) + (ord(msg[i+1]) << 8 )
+        s = s + w
+     
+    s = (s>>16) + (s & 0xffff);
+    s = s + (s >> 16);
+     
+    #complement and mask to 4 byte short
+    s = ~s & 0xffff
      
     return s
 
+
 def send_packet(data):
-    global server_port, client_port, client_ip, server_ip,destination_mac
+    global server_mac, client_mac, server_port, client_port, client_ip, server_ip
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
@@ -43,16 +55,27 @@ def send_packet(data):
     # s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
         
     # now start constructing the packet
-    packet = '';
+    packet = ''
     
     source_ip, dest_ip  = client_ip, server_ip
 
-    ##########eth_dest_mac = destination_mac
-    ##########eth_sour_mac = get_mac()
-    ##########eth_type = int("0x0800", 0) 
-    ##########
-    ##########ethernet_hdr = pack('!6s62s', eth_dest_mac,eth_sour_mac,eth_type)
-    ##########print "ETHERNET FRAME = " + ethernet_hdr
+    ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
+
+    eth_dest_mac = ':'.join(map(''.join, zip(*[iter(hex(server_mac))]*2)))[3:]
+    eth_sour_mac = ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
+    eth_type = 0x0800
+
+    print '--'
+    print 'dest:'
+    print eth_dest_mac
+    print 'src:'
+    print eth_sour_mac
+    print 'type:'
+    print eth_type
+    print '--'
+    
+    ethernet_hdr = pack('!6s6sH', eth_dest_mac, eth_sour_mac, eth_type)
+    print "ETHERNET FRAME = " + ethernet_hdr
 
     # ip header fields
     ip_ihl = 5
@@ -104,7 +127,7 @@ def send_packet(data):
     protocol = socket.IPPROTO_TCP
     tcp_length = len(tcp_header) + len(user_data)
     
-    psh = pack('!4s4sBBH' , source_address , dest_address , placeholder , protocol , tcp_length);
+    psh = pack('!4s4sBBH' , source_address , dest_address , placeholder , protocol , tcp_length)
     psh = psh + tcp_header + user_data;
     
     tcp_check = sum(map(ord, psh)) #checksum()
@@ -119,10 +142,20 @@ def send_packet(data):
     #Send the packet finally - the port specified has no effect
     s.sendto(packet, (dest_ip , 0 ))
 
+def macToArray(mac):
+    #return mac
+    list = map(''.join, zip(*[iter(hex(mac))]*2))[1:]
+    result_list = []
+
+    for i in list:
+        result_list.append(int('0x'+i, 16))
+
+    return result_list
+
             
 # Sniffer
 def sniffer():
-    global countJump, alive, client_port, server_port,destination_mac
+    global countJump, alive, client_port, server_port,server_mac
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
@@ -157,8 +190,8 @@ def sniffer():
         
         ttl = iph[5]
         protocol = iph[6]
-        s_addr = socket.inet_ntoa(iph[8]);
-        d_addr = socket.inet_ntoa(iph[9]);
+        s_addr = socket.inet_ntoa(iph[8])
+        d_addr = socket.inet_ntoa(iph[9])
         
         #print 'Version : ' + str(version) + ' IP Header Length : ' + str(ihl) + ' TTL : ' + str(ttl) + ' Protocol : ' + str(protocol) + ' Source Address : ' + str(s_addr) + ' Destination Address : ' + str(d_addr)
         
@@ -181,8 +214,8 @@ def sniffer():
         data_size = len(packet) - h_size
 
         if dest_port == client_port:
-            destination_mac = sourcemac
-            print 'DEST ' + destination_mac       
+            server_mac = sourcemac
+            print 'DEST ' + server_mac       
             data = packet[h_size:]
             clear()
             if data == '0':
@@ -201,16 +234,17 @@ def get_ip_address(ifname):
 
 
 def runClient():    
-    global alive, client_ip, server_ip, server_port
+    global alive, client_ip, server_mac, server_ip, server_port
     
-    if len(sys.argv) < 3:
-        print 'usage: sudo python client_tcp.py <server_ip> <server_port>'
+    if len(sys.argv) < 4:
+        print 'usage: sudo python client_tcp.py <server_mac> <server_ip> <server_port>'
         sys.exit()
 
-    server_ip = sys.argv[1]
-    server_port = int(sys.argv[2])
+    server_mac = int(sys.argv[1].replace(':', ''), 16)
+    server_ip = sys.argv[2]
+    server_port = int(sys.argv[3])
 
-    client_ip = get_ip_address('enp0s3')
+    client_ip =  get_ip_address('enp0s3') #'127.0.0.1' #
 
     print 'Trying to connect to: ' + server_ip + ':' + str(server_port)
 

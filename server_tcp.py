@@ -6,6 +6,7 @@ import sys
 import socket
 import fcntl
 import struct
+from uuid import getnode as get_mac
 from struct import *
 
 scene = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0]
@@ -67,8 +68,19 @@ def draw():
     return scene_str
 
 # Send packet
-def checksum(msg):
+def checksum2(msg):
     s = 0
+     
+    # loop taking 2 characters at a time
+    for i in range(0, len(msg) -1, 2):
+        w = ord(msg[i]) + (ord(msg[i+1]) << 8 )
+        s = s + w
+     
+    s = (s>>16) + (s & 0xffff);
+    s = s + (s >> 16);
+     
+    #complement and mask to 4 byte short
+    s = ~s & 0xffff
      
     return s
 
@@ -142,7 +154,7 @@ def send_packet(data):
     psh = pack('!4s4sBBH' , source_address , dest_address , placeholder , protocol , tcp_length);
     psh = psh + tcp_header + user_data;
     
-    tcp_check = sum(map(ord, psh)) #checksum()
+    tcp_check = checksum2(psh)
     #print tcp_checksum
     
     # make the tcp header again and fill the correct checksum - remember checksum is NOT in network byte order
@@ -229,11 +241,13 @@ def get_ip_address(ifname):
 def runServer():    
     global alive, server_ip, server_port
 
-    server_ip = get_ip_address('lo')
+    server_ip = get_ip_address('lo') #'127.0.0.1'  
+    server_mac = ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
 
     print '> Starting server...'
     print '> Server ip: ' + server_ip
     print '> Server port: ' + str(server_port)
+    print '> Server MAC: ' + server_mac
     print '> Waiting a connection...'
     try:
         t=threading.Thread(target=game)
