@@ -14,6 +14,7 @@ jumping = False
 countJump = 0
 alive = True
 connected = False
+score = 0
 
 server_port = 1098
 client_port = 1099
@@ -30,19 +31,23 @@ def game():
 
     print 'connecting...'
 
-    time.sleep(1)
+    time.sleep(0.5)
 
     while alive:
         cur_draw = draw()
         send_packet(cur_draw)
-        time.sleep(1)
+        time.sleep(0.1)
 
 def draw():
-    global input, jumping, alive, countJump
-    scene_str = "\n"*20
+    global input, jumping, alive, countJump, score
+    scene_str = "\n"*10
+    scene_str += "score: " + str(score)
+    scene_str += "\n"*10
     first = scene.pop(0)
     scene.append(first)
     countJump = countJump - 1 if countJump > 0 else 0
+
+    score += 1
 
     jumping = countJump > 0
 
@@ -64,6 +69,9 @@ def draw():
             scene_str += "_"
         else:
             scene_str += "|"
+
+        if(i == 5 and e == 1 and jumping):
+            score += 10
 
     return scene_str
 
@@ -242,7 +250,7 @@ def mac_string(mac):
     return  ':'.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
 
 def runServer():    
-    global alive, server_ip, server_port
+    global alive, server_ip, server_port, score
 
     server_ip = get_ip_address('lo') #'127.0.0.1'  
     ##server_mac = ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
@@ -265,7 +273,7 @@ def runServer():
     while alive:
         pass
 
-    send_packet('0')
+    send_packet('0|' + str(score))
     print "\nGAME OVER !!!\n"
 
 if  __name__ =='__main__':runServer()

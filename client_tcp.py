@@ -14,6 +14,7 @@ clear = lambda: os.system('clear')
 client_port = 1099
 
 alive = True
+score = 0
 
 # Keypress
 def keypress():
@@ -59,25 +60,25 @@ def send_packet(data):
     
     source_ip, dest_ip  = client_ip, server_ip
 
-    eth_dest_mac = mac_int_array(mac_string(server_mac))
-    eth_sour_mac = mac_int_array(mac_string(get_mac()))
-    eth_type = [0x08, 0x00]
+    # eth_dest_mac = mac_int_array(mac_string(server_mac))
+    # eth_sour_mac = mac_int_array(mac_string(get_mac()))
+    # eth_type = [0x08, 0x00]
 
-    print '--'
-    print 'dest:'
-    print eth_dest_mac
-    print 'src:'
-    print eth_sour_mac
-    print 'type:'
-    print eth_type
-    print '--'
+    # print '--'
+    # print 'dest:'
+    # print eth_dest_mac
+    # print 'src:'
+    # print eth_sour_mac
+    # print 'type:'
+    # print eth_type
+    # print '--'
 
-    ethernet_hdr = eth_dest_mac + eth_sour_mac + eth_type
-    print "ETHERNET ARRAY = "
-    print ethernet_hdr
+    # ethernet_hdr = eth_dest_mac + eth_sour_mac + eth_type
+    # print "ETHERNET ARRAY = "
+    # print ethernet_hdr
 
     # pack the ethernet
-    ethernet_hdr = "".join(map(chr, ethernet_hdr)) 
+    # ethernet_hdr = "".join(map(chr, ethernet_hdr)) 
 
     # ip header fields
     ip_ihl = 5
@@ -139,7 +140,8 @@ def send_packet(data):
     tcp_header = pack('!HHLLBBH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window) + pack('H' , tcp_check) + pack('!H' , tcp_urg_ptr)
     
     # final full packet - syn packets dont have any data
-    packet = ethernet_hdr + ip_header + tcp_header + user_data
+    #packet = ethernet_hdr + ip_header + tcp_header + user_data
+    packet = ip_header + tcp_header + user_data
     
     #Send the packet finally - the port specified has no effect
     s.sendto(packet, (dest_ip , 0 ))
@@ -157,7 +159,7 @@ def macToArray(mac):
             
 # Sniffer
 def sniffer():
-    global countJump, alive, client_port, server_port,server_mac
+    global countJump, alive, client_port, server_port,server_mac, score
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
@@ -216,12 +218,12 @@ def sniffer():
         data_size = len(packet) - h_size
 
         if dest_port == client_port:
-            server_mac = sourcemac
-            print 'DEST ' + server_mac       
+            server_mac = sourcemac 
             data = packet[h_size:]
             clear()
-            if data == '0':
+            if data[0] == '0':
                 alive = False
+                score = data.split('|')[1]
             else:
                 print data
 
@@ -246,7 +248,7 @@ def mac_int_array(hex_str):
 
 
 def runClient():    
-    global alive, client_ip, server_mac, server_ip, server_port
+    global alive, client_ip, server_mac, server_ip, server_port, score
     
     if len(sys.argv) < 4:
         print 'usage: sudo python client_tcp.py <server_mac> <server_ip> <server_port>'
@@ -272,6 +274,7 @@ def runClient():
     
     while alive:
         pass
-    print "\nGAME OVER !!!\n"
+    print "\n --- SCORE: " + score + " ---"
+    print "\n --- GAME OVER --- \n"
 
 if  __name__ =='__main__':runClient()
