@@ -47,7 +47,8 @@ def send_packet(data):
     global server_mac, client_mac, server_port, client_port, client_ip, server_ip
 
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+        #s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
     except socket.error , msg:
         print 'Socket could not be created. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
         sys.exit()
@@ -60,25 +61,13 @@ def send_packet(data):
     
     source_ip, dest_ip  = client_ip, server_ip
 
-    # eth_dest_mac = mac_int_array(mac_string(server_mac))
-    # eth_sour_mac = mac_int_array(mac_string(get_mac()))
-    # eth_type = [0x08, 0x00]
+    # ethernet header fields
+    eth_dest_mac = mac_int_array(mac_string(server_mac))
+    eth_sour_mac = mac_int_array(mac_string(get_mac()))
+    eth_type = [0x08, 0x00]
 
-    # print '--'
-    # print 'dest:'
-    # print eth_dest_mac
-    # print 'src:'
-    # print eth_sour_mac
-    # print 'type:'
-    # print eth_type
-    # print '--'
-
-    # ethernet_hdr = eth_dest_mac + eth_sour_mac + eth_type
-    # print "ETHERNET ARRAY = "
-    # print ethernet_hdr
-
-    # pack the ethernet
-    # ethernet_hdr = "".join(map(chr, ethernet_hdr)) 
+    ethernet_hdr = (eth_dest_mac + eth_sour_mac + eth_type)
+    ethernet_hdr = b"".join(map(chr, ethernet_hdr))
 
     # ip header fields
     ip_ihl = 5
@@ -140,11 +129,13 @@ def send_packet(data):
     tcp_header = pack('!HHLLBBH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window) + pack('H' , tcp_check) + pack('!H' , tcp_urg_ptr)
     
     # final full packet - syn packets dont have any data
-    #packet = ethernet_hdr + ip_header + tcp_header + user_data
-    packet = ip_header + tcp_header + user_data
+    packet = ethernet_hdr + ip_header + tcp_header + user_data
+    #packet = ip_header + tcp_header + user_data
     
     #Send the packet finally - the port specified has no effect
-    s.sendto(packet, (dest_ip , 0 ))
+    #s.sendto(packet, (dest_ip , 0 ))
+    s.bind(('eth0', 0))
+    s.send(packet)
 
 def macToArray(mac):
     #return mac
@@ -162,7 +153,8 @@ def sniffer():
     global countJump, alive, client_port, server_port,server_mac, score
 
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        #s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        s= socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
     except socket.error , msg:
         print 'Socket could not be created. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
         sys.exit()
@@ -173,15 +165,21 @@ def sniffer():
         
         #packet string from tuple
         packet = packet[0]
-        
-        #Ethernet Header...
-        ethernet_Header=packet[0:14]
 
-        ethrheader=struct.unpack("!6s6s2s",ethernet_Header)
-        sourcemac= binascii.hexlify(ethrheader[1])
-        
+        eth_header = packet[0:14]
+        eh = unpack("!6s6s2s", eth_header)
+
+        dest_addr = binascii.hexlify(eh[0])
+        source_addr = binascii.hexlify(eh[1])
+        type = binascii.hexlify(eh[2])
+
+        eh_length = 14
+
+        if dest_addr.upper() != mac_string2(get_mac()):
+            continue
+
         #take first 20 characters for the ip header
-        ip_header = packet[0:20]
+        ip_header = packet[eh_length:eh_length+20]
         
         #now unpack them :)
         iph = unpack('!BBHHHBBH4s4s' , ip_header)
@@ -199,14 +197,13 @@ def sniffer():
         
         #print 'Version : ' + str(version) + ' IP Header Length : ' + str(ihl) + ' TTL : ' + str(ttl) + ' Protocol : ' + str(protocol) + ' Source Address : ' + str(s_addr) + ' Destination Address : ' + str(d_addr)
         
-        tcp_header = packet[iph_length:iph_length+20]
+        tcp_header = packet[eh_length+iph_length:eh_length+iph_length+20]
         
         #now unpack them :)
         tcph = unpack('!HHLLBBHHH' , tcp_header)
         
         source_port = tcph[0]
         dest_port = tcph[1]
-
         sequence = tcph[2]
         acknowledgement = tcph[3]
         doff_reserved = tcph[4]
@@ -214,11 +211,10 @@ def sniffer():
         
         #print 'Source Port : ' + str(source_port) + ' Dest Port : ' + str(dest_port) + ' Sequence Number : ' + str(sequence) + ' Acknowledgement : ' + str(acknowledgement) + ' TCP header length : ' + str(tcph_length)
         
-        h_size = iph_length + tcph_length * 4
+        h_size = eh_length + iph_length + tcph_length * 4
         data_size = len(packet) - h_size
 
         if dest_port == client_port:
-            server_mac = sourcemac 
             data = packet[h_size:]
             clear()
             if data[0] == '0':
@@ -238,6 +234,9 @@ def get_ip_address(ifname):
 
 def mac_string(mac):
     return  ':'.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
+
+def mac_string2(mac):
+    return  ''.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
 
 def mac_int_array(hex_str):
     list = hex_str.split(':')

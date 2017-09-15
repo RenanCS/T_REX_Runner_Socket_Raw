@@ -6,6 +6,7 @@ import sys
 import socket
 import fcntl
 import struct
+import binascii
 from uuid import getnode as get_mac
 from struct import *
 
@@ -15,6 +16,7 @@ countJump = 0
 alive = True
 connected = False
 score = 0
+speed = 0.8
 
 server_port = 1098
 client_port = 1099
@@ -22,7 +24,7 @@ client_port = 1099
 # Game
 
 def game():
-    global alive, connected
+    global alive, connected, speed, score
     last = 0
     cur_draw = ''
 
@@ -36,12 +38,16 @@ def game():
     while alive:
         cur_draw = draw()
         send_packet(cur_draw)
-        time.sleep(0.1)
+
+        time.sleep(speed)
 
 def draw():
-    global input, jumping, alive, countJump, score
-    scene_str = "\n"*10
-    scene_str += "score: " + str(score)
+    global input, jumping, alive, countJump, score, speed
+    scene_str = "\n"*6
+    scene_str += "-- T-REX Runner --\n\n"
+    scene_str += "- press [ENTER] to jump\n"
+    scene_str += "- score: " + str(score) + "\n"
+    scene_str += "- speed: " + str(40 - 40 * speed) + "km/h \n"
     scene_str += "\n"*10
     first = scene.pop(0)
     scene.append(first)
@@ -72,6 +78,8 @@ def draw():
 
         if(i == 5 and e == 1 and jumping):
             score += 10
+            if speed > 0.2:
+                speed = speed - 0.1
 
     return scene_str
 
@@ -93,10 +101,11 @@ def checksum2(msg):
     return s
 
 def send_packet(data):
-    global server_port, client_port, client_ip, server_ip
+    global server_mac, client_mac, server_port, client_port, client_ip, server_ip
 
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+        #s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
     except socket.error , msg:
         print 'Socket could not be created. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
         sys.exit()
@@ -105,9 +114,17 @@ def send_packet(data):
     # s.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
         
     # now start constructing the packet
-    packet = '';
+    packet = ''
     
     source_ip, dest_ip  = server_ip, client_ip
+
+    # ethernet header fields
+    eth_dest_mac = mac_int_array(mac_string(client_mac))
+    eth_sour_mac = mac_int_array(mac_string(get_mac()))
+    eth_type = [0x08, 0x00]
+
+    ethernet_hdr = (eth_dest_mac + eth_sour_mac + eth_type)
+    ethernet_hdr = b"".join(map(chr, ethernet_hdr))
     
     # ip header fields
     ip_ihl = 5
@@ -169,18 +186,21 @@ def send_packet(data):
     tcp_header = pack('!HHLLBBH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window) + pack('H' , tcp_check) + pack('!H' , tcp_urg_ptr)
     
     # final full packet - syn packets dont have any data
-    packet = ip_header + tcp_header + user_data
+    packet = ethernet_hdr + ip_header + tcp_header + user_data
     
     #Send the packet finally - the port specified has no effect
-    s.sendto(packet, (dest_ip , 0 ))
+    #s.sendto(packet, (dest_ip , 0 ))
+    s.bind(('eth0', 0))
+    s.send(packet)
             
 # Sniffer
 
 def sniffer():
-    global countJump, alive, server_port, client_ip, connected
+    global countJump, alive, server_port, client_ip, connected, client_mac
 
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        #s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        s= socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
     except socket.error , msg:
         print 'Socket could not be created. Error Code : ' + str(msg[0]) + ' Message ' + msg[1]
         sys.exit()
@@ -191,9 +211,24 @@ def sniffer():
         
         #packet string from tuple
         packet = packet[0]
-        
+
+        eth_header = packet[0:14]
+        eh = unpack("!6s6s2s", eth_header)
+
+        dest_addr = binascii.hexlify(eh[0])
+        source_addr = binascii.hexlify(eh[1])
+        type = binascii.hexlify(eh[2])
+
+        eh_length = 14
+
+        if dest_addr.upper() != mac_string2(get_mac()):
+            continue
+
+        if not connected:
+            client_mac = int(source_addr, 16)
+
         #take first 20 characters for the ip header
-        ip_header = packet[0:20]
+        ip_header = packet[eh_length:eh_length+20]
         
         #now unpack them :)
         iph = unpack('!BBHHHBBH4s4s' , ip_header)
@@ -206,12 +241,12 @@ def sniffer():
         
         ttl = iph[5]
         protocol = iph[6]
-        s_addr = socket.inet_ntoa(iph[8]);
-        d_addr = socket.inet_ntoa(iph[9]);
+        s_addr = socket.inet_ntoa(iph[8])
+        d_addr = socket.inet_ntoa(iph[9])
         
         #print 'Version : ' + str(version) + ' IP Header Length : ' + str(ihl) + ' TTL : ' + str(ttl) + ' Protocol : ' + str(protocol) + ' Source Address : ' + str(s_addr) + ' Destination Address : ' + str(d_addr)
         
-        tcp_header = packet[iph_length:iph_length+20]
+        tcp_header = packet[eh_length+iph_length:eh_length+iph_length+20]
         
         #now unpack them :)
         tcph = unpack('!HHLLBBHHH' , tcp_header)
@@ -225,10 +260,10 @@ def sniffer():
         
         #print 'Source Port : ' + str(source_port) + ' Dest Port : ' + str(dest_port) + ' Sequence Number : ' + str(sequence) + ' Acknowledgement : ' + str(acknowledgement) + ' TCP header length : ' + str(tcph_length)
         
-        h_size = iph_length + tcph_length * 4
+        h_size = eh_length + iph_length + tcph_length * 4
         data_size = len(packet) - h_size
 
-        if dest_port == server_port:        
+        if dest_port == server_port:
             data = packet[h_size:]
             if data == 'connect':
                 client_ip = s_addr
@@ -248,6 +283,16 @@ def get_ip_address(ifname):
 
 def mac_string(mac):
     return  ':'.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
+
+def mac_string2(mac):
+    return  ''.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
+
+def mac_int_array(hex_str):
+    list = hex_str.split(':')
+    result = []
+    for i in list:
+        result.append(int(i,16))
+    return result
 
 def runServer():    
     global alive, server_ip, server_port, score
