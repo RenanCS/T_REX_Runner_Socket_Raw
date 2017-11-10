@@ -62,30 +62,34 @@ def send_packet(data):
     source_ip, dest_ip  = client_ip, server_ip
 
     # ethernet header fields
-    eth_dest_mac = mac_int_array(mac_string(server_mac))
-    eth_sour_mac = mac_int_array(mac_string(get_mac()))
+    eth_dest_mac = hex_int_array(mac_string(server_mac))
+    eth_sour_mac = hex_int_array(mac_string(get_mac()))
     eth_type = [0x08, 0x00]
 
     ethernet_hdr = (eth_dest_mac + eth_sour_mac + eth_type)
     ethernet_hdr = b"".join(map(chr, ethernet_hdr))
 
     # ip header fields
-    ip_ihl = 5
-    ip_ver = 4
-    ip_tos = 0
-    ip_tot_len = 0  # kernel will fill the correct total length
-    ip_id = 54321   #Id of this packet
-    ip_frag_off = 0
-    ip_ttl = 255
-    ip_proto = socket.IPPROTO_TCP
-    ip_check = 0    # kernel will fill the correct checksum
-    ip_saddr = socket.inet_aton ( source_ip )   #Spoof the source ip address if you want to
-    ip_daddr = socket.inet_aton ( dest_ip )
-    
-    ip_ihl_ver = (ip_ver << 4) + ip_ihl
+    ip_ver = 6      #version IP
+    ip_tc = 0       #default
+    ip_fl = 0       #default
+    ip_plen = 64    # (packet - header)
+    ip_nh = 6       #TCP
+    ip_hlim = 64    #limite de router que o pacote podera percorrer
+    ip_saddr = socket.inet_pton(socket.AF_INET6, dest_ip)
+    ip_daddr = socket.inet_pton(socket.AF_INET6, dest_ip)
     
     # the ! in the pack format string means network order
-    ip_header = pack('!BBHHHBBH4s4s' , ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
+    ip_header = pack('!HHHLHL8s8s',
+        ip_ver, 
+        ip_tc,  
+        ip_fl,  
+        ip_plen,    
+        ip_nh,  
+        ip_hlim,    
+        ip_saddr,   
+        ip_daddr
+    )
     
     # tcp header fields
     tcp_source = client_port   # source port
@@ -113,8 +117,8 @@ def send_packet(data):
     user_data = data
     
     # pseudo header fields
-    source_address = socket.inet_aton( source_ip )
-    dest_address = socket.inet_aton(dest_ip)
+    source_address = socket.inet_pton(socket.AF_INET6, dest_ip)
+    dest_address = socket.inet_pton(socket.AF_INET6, dest_ip)
     placeholder = 0
     protocol = socket.IPPROTO_TCP
     tcp_length = len(tcp_header) + len(user_data)
@@ -134,7 +138,7 @@ def send_packet(data):
     
     #Send the packet finally - the port specified has no effect
     #s.sendto(packet, (dest_ip , 0 ))
-    s.bind(('eth0', 0))
+    s.bind(('enp2s0', 0))
     s.send(packet)
 
 def macToArray(mac):
@@ -238,7 +242,7 @@ def mac_string(mac):
 def mac_string2(mac):
     return  ''.join(("%012X" % mac)[i:i+2] for i in range(0, 12, 2))
 
-def mac_int_array(hex_str):
+def hex_int_array(hex_str):
     list = hex_str.split(':')
     result = []
     for i in list:
@@ -257,7 +261,7 @@ def runClient():
     server_ip = sys.argv[2]
     server_port = int(sys.argv[3])
 
-    client_ip =  get_ip_address('eth0') #'127.0.0.1' #
+    client_ip =  get_ip_address('enp2s0') #'127.0.0.1' #
 
     print 'Trying to connect to: ' + server_ip + ':' + str(server_port)
 

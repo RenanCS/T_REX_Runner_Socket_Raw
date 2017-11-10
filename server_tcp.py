@@ -121,28 +121,33 @@ def send_packet(data):
     # ethernet header fields
     eth_dest_mac = mac_int_array(mac_string(client_mac))
     eth_sour_mac = mac_int_array(mac_string(get_mac()))
-    eth_type = [0x08, 0x00]
+    eth_type = [0x8D, 0x66]
 
     ethernet_hdr = (eth_dest_mac + eth_sour_mac + eth_type)
     ethernet_hdr = b"".join(map(chr, ethernet_hdr))
     
     # ip header fields
-    ip_ihl = 5
-    ip_ver = 4
-    ip_tos = 0
-    ip_tot_len = 0  # kernel will fill the correct total length
-    ip_id = 54321   #Id of this packet
-    ip_frag_off = 0
-    ip_ttl = 255
-    ip_proto = socket.IPPROTO_TCP
-    ip_check = 0    # kernel will fill the correct checksum
-    ip_saddr = socket.inet_aton ( source_ip )   #Spoof the source ip address if you want to
-    ip_daddr = socket.inet_aton ( dest_ip )
-    
-    ip_ihl_ver = (ip_ver << 4) + ip_ihl
+
+    ip_ver = 6      #version IP
+    ip_tc = 0       #default
+    ip_fl = 0       #default
+    ip_plen = 64    # (packet - header)
+    ip_nh = 6       #TCP
+    ip_hlim = 64    #limite de router que o pacote podera percorrer
+    ip_saddr = socket.inet_aton ( source_ip )   
+    ip_daddr = socket.inet_aton ( source_ip )
     
     # the ! in the pack format string means network order
-    ip_header = pack('!BBHHHBBH4s4s' , ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto, ip_check, ip_saddr, ip_daddr)
+    ip_header = pack('!HHHLHL16s16s',
+        ip_ver, 
+        ip_tc,  
+        ip_fl,  
+        ip_plen,    
+        ip_nh,  
+        ip_hlim,    
+        ip_saddr,   
+        ip_daddr
+    )
     
     # tcp header fields
     tcp_source = server_port   # source port
@@ -190,7 +195,7 @@ def send_packet(data):
     
     #Send the packet finally - the port specified has no effect
     #s.sendto(packet, (dest_ip , 0 ))
-    s.bind(('eth0', 0))
+    s.bind(('enp2s0', 0))
     s.send(packet)
             
 # Sniffer
@@ -297,7 +302,7 @@ def mac_int_array(hex_str):
 def runServer():    
     global alive, server_ip, server_port, score
 
-    server_ip = get_ip_address('lo') #'127.0.0.1'  
+    server_ip = "2001:db8:0:1:3ddd:dc62:4805:7a2e"#get_ip_address('lo') #'127.0.0.1'  
     ##server_mac = ':'.join(map(''.join, zip(*[iter(hex(get_mac()))]*2)))[3:]
 
     print '> Starting server...'
