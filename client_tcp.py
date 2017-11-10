@@ -64,7 +64,7 @@ def send_packet(data):
     # ethernet header fields
     eth_dest_mac = hex_int_array(mac_string(server_mac))
     eth_sour_mac = hex_int_array(mac_string(get_mac()))
-    eth_type = [0x08, 0x00]
+    eth_type = [0x8D, 0x66]
 
     ethernet_hdr = (eth_dest_mac + eth_sour_mac + eth_type)
     ethernet_hdr = b"".join(map(chr, ethernet_hdr))
@@ -133,7 +133,7 @@ def send_packet(data):
     tcp_header = pack('!HHLLBBH' , tcp_source, tcp_dest, tcp_seq, tcp_ack_seq, tcp_offset_res, tcp_flags,  tcp_window) + pack('H' , tcp_check) + pack('!H' , tcp_urg_ptr)
     
     # final full packet - syn packets dont have any data
-    packet = ethernet_hdr + ip_header + tcp_header + user_data
+    packet = ethernet_hdr + ip_header # + tcp_header + user_data
     #packet = ip_header + tcp_header + user_data
     
     #Send the packet finally - the port specified has no effect
